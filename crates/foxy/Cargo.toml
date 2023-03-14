@@ -1,0 +1,8 @@
+[package]
+name = "foxy"
+description = "Compiler for the Kyoot language"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+readme.workspace = true
+license-file.workspace = true
