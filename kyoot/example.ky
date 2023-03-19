@@ -1,0 +1,57 @@
+main :: () {
+    text := "Hello World!"
+
+    variable := {
+        a := 34
+        b := 35
+        a b +
+    } 
+
+    420  drop_int()
+    text print_str()
+
+    //text $ print_buff()
+
+    //closure
+    //|string| {
+    //    do_stuff
+    //}
+
+    text
+    takes_fn()
+
+    //cls :: |string| {
+    //    do_stuff
+    //}
+
+    cls       text takes_fn()
+    print_str text takes_fn()
+
+    true if 69 else { 
+        420
+    }
+}
+
+//drop_int :: ($int) => drop()
+
+//print_str :: (using text: string) {
+//    .data .lenght print_buff()
+//}
+
+//print_str :: ({data, lenght}: string) {
+//    data lenght print_buff()
+//}
+
+//print_str :: (text: string) {
+//    text.data text.lenght print_buff()
+//}
+
+//print_str :: ($string) => print_buff()
+
+print_buff :: (data: ptr, lenght: int) {
+    impl-details
+}
+
+//takes_fn :: (cls: |string|, text: string) {
+//    text cls()
+//}

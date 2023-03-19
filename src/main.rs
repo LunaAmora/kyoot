@@ -43,8 +43,10 @@ fn main() {
 
 fn try_main(args: Cli) -> anyhow::Result<()> {
     let Commands::Com { path } = args.command;
-    let file = File::open(path)?;
-    foxy::compile(BufReader::new(file))
+    let file = File::open(&path)?;
+    let source_name = path.to_string_lossy();
+
+    foxy::compile(BufReader::new(file), &source_name)
 }
 
 #[cfg(test)]

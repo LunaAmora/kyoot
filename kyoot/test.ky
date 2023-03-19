@@ -1,0 +1,13 @@
+drop_int :: (value: int) {
+    //value dopped
+}
+
+main :: () {
+    variable := {
+        a := 34
+        b := 35
+        a b +
+    }
+
+    variable drop_int()
+}
