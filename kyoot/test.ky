@@ -1,13 +1,14 @@
-drop_int :: (value: int) {
-    //value dopped
-}
-
 main :: () {
-    variable := {
-        a := 34
-        b := 35
-        a b +
+    //Here the `string_arg` is the name of the first argument of the closure
+    //It's type will be infered to `str` by the usage of `print` in the closure body
+    cls :: |string_arg| {
+        string_arg print
     }
 
-    variable drop_int()
+    hello : str : "Hello, World!" 
+    hello cls()
+}
+
+print :: (str) {
+    //Here the type `str` is not bound to a var name, so its just put on the stack
 }

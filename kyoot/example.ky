@@ -1,5 +1,6 @@
 main :: () {
     text := "Hello World!"
+    constant :: 69
 
     variable := {
         a := 34
@@ -13,16 +14,16 @@ main :: () {
     //text $ print_buff()
 
     //closure
-    //|string| {
-    //    do_stuff
-    //}
+    |string| {
+        do_stuff
+    }
 
     text
     takes_fn()
 
-    //cls :: |string| {
-    //    do_stuff
-    //}
+    cls :: |string| {
+        do_stuff
+    }
 
     cls       text takes_fn()
     print_str text takes_fn()

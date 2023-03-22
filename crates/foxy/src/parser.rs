@@ -45,6 +45,7 @@ pub enum Expr<'src> {
     Then(Box<Spanned<Self>>, Box<Spanned<Self>>),
     Let(&'src str, Option<Type<'src>>, Box<Spanned<Self>>),
     If(Box<Spanned<Self>>, Box<Spanned<Self>>),
+    Closure(Box<Func<'src>>),
 }
 
 #[derive(Debug)]
@@ -52,7 +53,7 @@ pub struct Type<'src>(&'src str);
 
 #[derive(Debug)]
 pub struct Func<'src> {
-    pub args: Vec<(&'src str, Type<'src>)>,
+    pub args: Vec<(&'src str, Option<Type<'src>>)>,
     pub span: Span,
     pub body: Spanned<Expr<'src>>,
 }
@@ -102,8 +103,7 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
         // Blocks are expressions but delimited with braces
         let empty_block = just(Token::Ctrl('{'))
             .then(just(Token::Ctrl('}')))
-            .map_with_span(|_, span| (Expr::Value(Value::Unit), span))
-            .labelled("empty block");
+            .map_with_span(|_, span| (Expr::Value(Value::Unit), span));
 
         let block = expr
             .clone()
@@ -144,10 +144,27 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
                 .then_ignore(just(Token::Ctrl(')')))
                 .map_with_span(|call, span| (Expr::Call(Box::new((call, span))), span));
 
-            call.or(val
-                .or(ident.map(Expr::Local))
-                .or(list)
-                .map_with_span(|expr, span| (expr, span)))
+            let cls_args = pattern
+                .clone()
+                .separated_by(just(Token::Ctrl(',')))
+                .allow_trailing()
+                .collect()
+                .delimited_by(just(Token::Ctrl('|')), just(Token::Ctrl('|')))
+                .map_with_span(|args, span| (args, span))
+                .labelled("closure args");
+
+            let closure =
+                cls_args
+                    .then(expr.clone())
+                    .map_with_span(|((args, span), body), s| {
+                        (Expr::Closure(Box::new(Func { args, span, body })), s)
+                    });
+
+            call.or(closure)
+                .or(val
+                    .or(ident.map(Expr::Local))
+                    .or(list)
+                    .map_with_span(|expr, span| (expr, span)))
                 .labelled("inlined_expression")
         };
 
@@ -171,14 +188,15 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
         let let_ = (pattern
             .clone()
             .filter(|(_, typ)| typ.is_some())
-            .then_ignore(just(Token::Op("="))))
+            .then_ignore(just(Token::Op("=")).or(just(Token::Op(":")))))
         .or(pattern
             .filter(|(_, typ)| typ.is_none())
-            .then_ignore(just(Token::Op(":="))))
+            .then_ignore(just(Token::Op(":=")).or(just(Token::Op("::")))))
         .then(code_block.clone())
         .map_with_span(|((name, val), inline), span| {
             (Expr::Let(name, val, Box::new(inline)), span)
-        });
+        })
+        .labelled("let expression");
 
         let if_ = recursive(|if_| {
             just(Token::Keyword(If))
@@ -203,7 +221,7 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
         });
 
         // Both blocks and `if` are 'block expressions' and can appear in the place of statements
-        let block_expr = empty_block.or(block).or(if_).labelled("block");
+        let block_expr = empty_block.or(block).or(if_);
 
         let other_expr = let_.or(inline_expr.clone()).or(op);
 
@@ -221,9 +239,10 @@ fn parse_funcs<'tokens, 'src: 'tokens>() -> impl Parser<
     Err<ParserError<'tokens, 'src>>,
 > {
     let ident = select! { Token::Ident(ident) => ident };
-    let pattern = (ident.then_ignore(just(Token::Op(":"))).then(ident))
-        .or(ident.map(|id| (id, "_")))
-        .map(|(name, typ)| (name, Type(typ)));
+    let pattern = (ident.then(just(Token::Op(":")).ignore_then(ident)))
+        .or(ident.map(|typ| ("" , typ)))
+        .map(|(name, typ)| (name, Some(Type(typ))))
+        .labelled("pattern");
 
     // Argument lists are just identifiers separated by commas, surrounded by parentheses
     let args = pattern
