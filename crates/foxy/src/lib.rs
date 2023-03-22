@@ -50,7 +50,7 @@ pub fn compile(src: impl Read, source_name: &str) -> Result<()> {
             Report::build(ReportKind::Error, source_name.to_string(), e.span().start)
                 .with_message(e.to_string())
                 .with_label(
-                    Label::new((source_name.to_string(), dbg!(e.span()).into_range()))
+                    Label::new((source_name.to_string(), e.span().into_range()))
                         .with_message(e.reason().to_string())
                         .with_color(Color::Red),
                 )
