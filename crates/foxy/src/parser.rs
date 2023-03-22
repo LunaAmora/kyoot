@@ -101,14 +101,12 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
 > + Clone {
     recursive(|expr| {
         // Blocks are expressions but delimited with braces
-        let empty_block = just(Token::Ctrl('{'))
-            .then(just(Token::Ctrl('}')))
-            .map_with_span(|_, span| (Expr::Value(Value::Unit), span));
-
-        let block = expr
-            .clone()
-            .delimited_by(just(Token::Ctrl('{')), just(Token::Ctrl('}')))
-            // Attempt to recover anything that looks like a block but contains errors
+        let block = just(Token::Ctrl('{'))
+            .ignore_then(expr.clone().or_not())
+            .then_ignore(just(Token::Ctrl('}')))
+            .map_with_span(|body, span| {
+                body.unwrap_or_else(|| (Expr::Value(Value::Unit), span))
+            })
             .recover_with(block_recovery());
 
         let ident = select! { Token::Ident(ident) => ident }.labelled("identifier");
@@ -117,13 +115,12 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
             .map(|(name, typ)| (name, typ.map(Type)))
             .labelled("pattern");
 
-        let inline_expr = {
+        let inline_expr = recursive(|inline_expr| {
             let val = select! {
                 Token::Bool(x) => Expr::Value(Value::Bool(x)),
                 Token::Num(n) => Expr::Value(Value::Num(n)),
                 Token::Str(s) => Expr::Value(Value::Str(s)),
-            }
-            .labelled("value");
+            };
 
             // A list of expressions
             let items = expr
@@ -137,28 +134,28 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
                 .map(Expr::List)
                 .delimited_by(just(Token::Ctrl('[')), just(Token::Ctrl(']')));
 
-            // Function calls have very high precedence so we prioritise them
-            let call = ident
-                .map(|name| Expr::Value(Value::Func(name)))
-                .then_ignore(just(Token::Ctrl('(')))
-                .then_ignore(just(Token::Ctrl(')')))
-                .map_with_span(|call, span| (Expr::Call(Box::new((call, span))), span));
-
             let cls_args = pattern
                 .clone()
                 .separated_by(just(Token::Ctrl(',')))
                 .allow_trailing()
                 .collect()
                 .delimited_by(just(Token::Ctrl('|')), just(Token::Ctrl('|')))
-                .map_with_span(|args, span| (args, span))
-                .labelled("closure args");
+                .map_with_span(|args, span| (args, span));
 
-            let closure =
-                cls_args
-                    .then(expr.clone())
-                    .map_with_span(|((args, span), body), s| {
-                        (Expr::Closure(Box::new(Func { args, span, body })), s)
-                    });
+            let closure = cls_args
+                .then(block.clone().or(inline_expr.clone()))
+                .map_with_span(|((args, span), body), s| {
+                    (Expr::Closure(Box::new(Func { args, span, body })), s)
+                });
+
+            // Function calls have very high precedence so we prioritise them
+            let call = ident
+                .map_with_span(|name, span| (Expr::Value(Value::Func(name)), span))
+                .or(closure.clone())
+                .or(block.clone())
+                .then_ignore(just(Token::Ctrl('(')))
+                .then_ignore(just(Token::Ctrl(')')))
+                .map_with_span(|call, span| (Expr::Call(Box::new(call)), span));
 
             call.or(closure)
                 .or(val
@@ -166,7 +163,7 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
                     .or(list)
                     .map_with_span(|expr, span| (expr, span)))
                 .labelled("inlined_expression")
-        };
+        });
 
         let op = select! {
             Token::Op("+") => Expr::BinaryOp(BinaryOp::Add),
@@ -179,10 +176,7 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
         .map_with_span(|op, span| (op, span))
         .labelled("op");
 
-        let code_block = inline_expr
-            .clone()
-            .or(empty_block.clone())
-            .or(block.clone());
+        let code_block = inline_expr.clone().or(block.clone()).labelled("block");
 
         // A let expression
         let let_ = (pattern
@@ -218,17 +212,16 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
                         span,
                     )
                 })
-        });
-
-        // Both blocks and `if` are 'block expressions' and can appear in the place of statements
-        let block_expr = empty_block.or(block).or(if_);
-
-        let other_expr = let_.or(inline_expr.clone()).or(op);
-
-        block_expr.or(other_expr).foldl(expr.repeated(), |a, b| {
-            let span = a.1.start..b.1.end;
-            (Expr::Then(Box::new(a), Box::new(b)), span.into())
         })
+        .labelled("if expression");
+
+        let_.or(op)
+            .or(code_block)
+            .or(if_)
+            .foldl(expr.repeated(), |a, b| {
+                let span = a.1.start..b.1.end;
+                (Expr::Then(Box::new(a), Box::new(b)), span.into())
+            })
     })
 }
 
@@ -240,7 +233,7 @@ fn parse_funcs<'tokens, 'src: 'tokens>() -> impl Parser<
 > {
     let ident = select! { Token::Ident(ident) => ident };
     let pattern = (ident.then(just(Token::Op(":")).ignore_then(ident)))
-        .or(ident.map(|typ| ("" , typ)))
+        .or(ident.map(|typ| ("", typ)))
         .map(|(name, typ)| (name, Some(Type(typ))))
         .labelled("pattern");
 
