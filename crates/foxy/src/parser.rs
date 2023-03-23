@@ -142,27 +142,23 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
                 .delimited_by(just(Token::Ctrl('|')), just(Token::Ctrl('|')))
                 .map_with_span(|args, span| (args, span));
 
-            let closure = cls_args
-                .then(block.clone().or(inline_expr.clone()))
-                .map_with_span(|((args, span), body), s| {
-                    (Expr::Closure(Box::new(Func { args, span, body })), s)
-                });
+            let closure = cls_args.then(block.clone().or(inline_expr.clone())).map(
+                |((args, span), body)| Expr::Closure(Box::new(Func { args, span, body })),
+            );
 
             // Function calls have very high precedence so we prioritise them
-            let call = ident
-                .map_with_span(|name, span| (Expr::Value(Value::Func(name)), span))
-                .or(closure.clone())
-                .or(block.clone())
-                .then_ignore(just(Token::Ctrl('(')))
-                .then_ignore(just(Token::Ctrl(')')))
-                .map_with_span(|call, span| (Expr::Call(Box::new(call)), span));
+            let call = choice((
+                ident.map_with_span(|name, span| (Expr::Value(Value::Func(name)), span)),
+                closure.clone().map_with_span(|cls, span| (cls, span)),
+                block.clone(),
+            ))
+            .then_ignore(just(Token::Ctrl('(')))
+            .then_ignore(just(Token::Ctrl(')')))
+            .map(|call| Expr::Call(Box::new(call)));
 
-            call.or(closure)
-                .or(val
-                    .or(ident.map(Expr::Local))
-                    .or(list)
-                    .map_with_span(|expr, span| (expr, span)))
-                .labelled("inlined_expression")
+            choice((call, closure, val, ident.map(Expr::Local), list))
+                .map_with_span(|expr, span| (expr, span))
+                .labelled("inlined expression")
         });
 
         let op = select! {
@@ -215,13 +211,10 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
         })
         .labelled("if expression");
 
-        let_.or(op)
-            .or(code_block)
-            .or(if_)
-            .foldl(expr.repeated(), |a, b| {
-                let span = a.1.start..b.1.end;
-                (Expr::Then(Box::new(a), Box::new(b)), span.into())
-            })
+        choice((let_, op, code_block, if_)).foldl(expr.repeated(), |a, b| {
+            let span = a.1.start..b.1.end;
+            (Expr::Then(Box::new(a), Box::new(b)), span.into())
+        })
     })
 }
 
