@@ -1,3 +1,4 @@
+#![feature(trait_alias)]
 use std::io::Read;
 
 use anyhow::Result;

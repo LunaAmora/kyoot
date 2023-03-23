@@ -65,6 +65,9 @@ type ParserOutput<'tokens, 'src> =
 type ParserInput<'tokens, 'src> =
     SpannedInput<Token<'src>, Span, &'tokens [Spanned<Token<'src>>]>;
 
+trait IParser<'tokens, 'src: 'tokens, I> =
+    Parser<'tokens, ParserInput<'tokens, 'src>, I, Err<ParserError<'tokens, 'src>>>;
+
 pub fn parse<'tokens, 'src: 'tokens>(
     tokens: &'src Vec<(Token, SimpleSpan)>, eoi: Span,
 ) -> ParserOutput<'tokens, 'src> {
@@ -74,14 +77,8 @@ pub fn parse<'tokens, 'src: 'tokens>(
         .into_output_errors()
 }
 
-fn block_recovery<'tokens, 'src: 'tokens>() -> ViaParser<
-    impl Parser<
-            'tokens,
-            ParserInput<'tokens, 'src>,
-            Spanned<Expr<'src>>,
-            Err<ParserError<'tokens, 'src>>,
-        > + Clone,
-> {
+fn block_recovery<'tokens, 'src: 'tokens>(
+) -> ViaParser<impl IParser<'tokens, 'src, Spanned<Expr<'src>>> + Clone> {
     via_parser(nested_delimiters(
         Token::Ctrl('{'),
         Token::Ctrl('}'),
@@ -93,12 +90,8 @@ fn block_recovery<'tokens, 'src: 'tokens>() -> ViaParser<
     ))
 }
 
-fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
-    'tokens,
-    ParserInput<'tokens, 'src>,
-    Spanned<Expr<'src>>,
-    Err<ParserError<'tokens, 'src>>,
-> + Clone {
+fn parse_expr<'tokens, 'src: 'tokens>(
+) -> impl IParser<'tokens, 'src, Spanned<Expr<'src>>> + Clone {
     recursive(|expr| {
         // Blocks are expressions but delimited with braces
         let block = just(Token::Ctrl('{'))
@@ -218,12 +211,8 @@ fn parse_expr<'tokens, 'src: 'tokens>() -> impl Parser<
     })
 }
 
-fn parse_funcs<'tokens, 'src: 'tokens>() -> impl Parser<
-    'tokens,
-    ParserInput<'tokens, 'src>,
-    HashMap<&'src str, Func<'src>>,
-    Err<ParserError<'tokens, 'src>>,
-> {
+fn parse_funcs<'tokens, 'src: 'tokens>(
+) -> impl IParser<'tokens, 'src, HashMap<&'src str, Func<'src>>> {
     let ident = select! { Token::Ident(ident) => ident };
     let pattern = (ident.then(just(Token::Op(":")).ignore_then(ident)))
         .or(ident.map(|typ| ("", typ)))
@@ -270,11 +259,6 @@ fn parse_funcs<'tokens, 'src: 'tokens>() -> impl Parser<
         })
 }
 
-fn parse_module<'tokens, 'src: 'tokens>() -> impl Parser<
-    'tokens,
-    ParserInput<'tokens, 'src>,
-    Module<'src>,
-    Err<ParserError<'tokens, 'src>>,
-> {
+fn parse_module<'tokens, 'src: 'tokens>() -> impl IParser<'tokens, 'src, Module<'src>> {
     parse_funcs().map(|funcs| Module { name: None, funcs })
 }
